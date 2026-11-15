@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="id.fir.robot">
+
+    <!-- WiFi / jaringan -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- v1.6: izin Bluetooth (BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_SCAN,
+         BLUETOOTH_CONNECT) dan ACCESS_FINE_LOCATION dihapus — aplikasi
+         kini WiFi-only; ACCESS_FINE_LOCATION dulu hanya dipakai pindai
+         BLE di Android lama dan tidak ada pemakai lain. -->
+
+    <application
+        android:label="FIR"
+        android:icon="@drawable/ic_fir"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:usesCleartextTraffic="true"
+        android:allowBackup="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Penyedia berkas unduhan SD agar bisa dibuka lewat ACTION_VIEW -->
+        <provider
+            android:name=".FirFileProvider"
+            android:authorities="id.fir.robot.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

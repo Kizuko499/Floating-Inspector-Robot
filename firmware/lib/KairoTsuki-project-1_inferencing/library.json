@@ -1,0 +1,1 @@
+{"build":{"srcDir":"src"},"description":"Model Edge Impulse FIR kandidat korosi (int8, 96x96, 4 kelas) - manifest PlatformIO tanpa depends agar build offline tidak mencoba mengunduh library contoh Arduino dari library.properties bawaan.","frameworks":"arduino","name":"KairoTsuki-project-1_inferencing","platforms":"espressif32","version":"1.0.1"}

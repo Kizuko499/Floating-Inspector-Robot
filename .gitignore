@@ -1,0 +1,10 @@
+.pio/
+.vscode/
+*.bin
+*.elf
+*.map
+*.apk
+.DS_Store
+local.properties
+.gradle/
+build/

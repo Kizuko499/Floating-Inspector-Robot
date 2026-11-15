@@ -1,0 +1,28 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'id.fir.robot'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'id.fir.robot'
+        minSdk 26
+        targetSdk 34
+        versionCode 11
+        versionName '2.0'
+    }
+
+    buildTypes {
+        debug {
+            // keystore debug bawaan Gradle dipakai otomatis
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
