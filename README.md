@@ -17,6 +17,29 @@
 
 ---
 
+## Daftar Isi
+
+- [Tentang FIR](#tentang-fir)
+- [Spesifikasi Singkat](#spesifikasi-singkat)
+- [Istilah Penting](#istilah-penting)
+- [Dua Misi](#dua-misi)
+- [Cara Kerja](#cara-kerja)
+- [Konstruksi Fisik](#-konstruksi-fisik)
+- [Wiring Lengkap](#-wiring-lengkap)
+- [Daftar Belanja (Bill of Materials)](#-daftar-belanja-bill-of-materials)
+- [Fitur Firmware v7.10.2](#fitur-firmware-v7102)
+- [Panduan Dashboard & Aplikasi](#panduan-dashboard--aplikasi)
+- [Struktur Repo](#struktur-repo)
+- [Build Firmware](#-build-firmware)
+- [Build Aplikasi Android](#-build-aplikasi-android)
+- [Panduan Operasional Langkah demi Langkah](#panduan-operasional-langkah-demi-langkah)
+- [Pemecahan Masalah (Troubleshooting)](#pemecahan-masalah-troubleshooting)
+- [FAQ](#faq)
+- [Keterbatasan yang Diketahui](#keterbatasan-yang-diketahui)
+- [Lisensi](#lisensi)
+
+---
+
 ## Tentang FIR
 
 **FIR (Floating Inspector Robot)** adalah robot terapung (buoy robot) yang dirancang, dirakit, dan diprogram **sendiri dari nol** sebagai karya pribadi. Robot ini mengapung di permukaan air pelabuhan dan melakukan dua pekerjaan sekaligus:
@@ -28,16 +51,35 @@ Seluruh data tampil real-time di **dashboard web** yang disiarkan robot itu send
 
 Robot ini pernah dibawa ke **final KSTI 2026** (kategori IoT, ITS Surabaya).
 
+## Spesifikasi Singkat
+
+| Aspek | Isi |
+|---|---|
+| **Otak** | ESP32-S3 CAM (N16R8) — MCU + WiFi + kamera + slot microSD dalam satu board |
+| **Kamera** | OV5640 5 MP, lensa menghadap zona garis air |
+| **Parameter air** | Suhu (DS18B20), kekeruhan (turbidity SEN-0175), TDS (analog kompatibel Gravity) |
+| **Sensor pendukung** | Level air (ketinggian permukaan di lambung) dan hujan LM393 (di atas box) |
+| **Indeks kualitas** | WQI 0–100 (BAIK ≥ 80 · SEDANG 50–79 · BURUK < 50) |
+| **Penggerak** | 2 motor DC + driver DRV8833, pola *differential thrust* |
+| **Daya** | 1 sel Li-ion 18650 ≥ 2000 mAh + modul MH-CD42 (IP5306): charger + proteksi + boost 5 V/2,4 A |
+| **Konektivitas** | WiFi mode Access Point `FIR-Robot` — tanpa router, tanpa internet, tanpa Bluetooth |
+| **Antarmuka** | Dashboard web di `192.168.4.1` + aplikasi Android pendamping |
+| **Penyimpanan** | microSD — foto inspeksi + log data |
+| **Firmware** | v7.10.2 (PlatformIO / Arduino) |
+
 ## Istilah Penting
 
 | Istilah | Arti |
 |---|---|
 | **WQI (Water Quality Index)** | Indeks tunggal 0–100 yang merangkum kualitas air dari gabungan suhu, kekeruhan, dan TDS. ≥80 = BAIK, 50–79 = SEDANG, <50 = BURUK. |
 | **Zona garis air (waterline zone)** | Pita sempit di pertemuan permukaan air dan dinding dermaga/lambung kapal. Di sinilah biofouling dan korosi paling agresif, dan di sinilah kamera FIR bekerja. |
+| **Biofouling** | Penumpukan organisme (kerang, teritip, alga) yang menempel di permukaan terendam — mempercepat korosi dan menambah beban struktur. |
 | **Kandidat korosi** | Area coklat/oranye pada foto yang skor analisanya ≥0,70. Robot hanya *menandai kandidat* — keputusan akhir selalu **perlu verifikasi operator**, robot tidak pernah mengklaim "mendeteksi karat". |
 | **Mode AP (Access Point)** | Robot membuat hotspot WiFi sendiri bernama `FIR-Robot`; HP/laptop menyambung langsung ke robot tanpa router. |
 | **Debounce alarm** | Alarm (banner merah + buzzer) hanya bunyi setelah **3× bacaan berbahaya berturut-turut**, supaya satu bacaan loncat tidak memicu alarm palsu. |
 | **Rel 5V / rel 3V3** | Jalur tegangan bersama. Rel 5V memberi makan driver motor dan adaptor turbidity; rel 3V3 memberi makan sensor-sensor kecil. |
+| **Power-path** | Kemampuan modul daya mengecas sel **sambil** memberi makan beban — USB cas boleh dicolok/dicabut saat robot beroperasi. |
+| **Differential thrust** | Cara belok robot perahu tanpa kemudi: kecepatan dua motor diatur berbeda; berlawanan arah = putar di tempat. |
 
 ## Dua Misi
 
@@ -54,9 +96,16 @@ Robot ini pernah dibawa ke **final KSTI 2026** (kategori IoT, ITS Surabaya).
 
 ## Cara Kerja
 
-1. **Ukur** — ESP32-S3 membaca semua sensor secara berkala: suhu, turbidity, TDS, level air, dan hujan.
-2. **Nilai** — firmware menghitung WQI, memeriksa setiap parameter terhadap ambang batas, dan menerapkan debounce 3× sebelum menyatakan ALERT.
-3. **Tampil & Gerak** — dashboard web + aplikasi Android menampilkan telemetri real-time; operator menggerakkan robot dengan joystick virtual (2 motor DC, differential thrust) sambil melihat hasil kamera.
+Satu siklus kerja robot, dari menyala sampai data terbaca operator:
+
+1. **Nyalakan** — saklar utama ON; modul MH-CD42 memberi rel 5 V dari sel 18650, ESP32-S3 boot, dan firmware menyiapkan sensor, kamera, dan driver motor.
+2. **Hotspot aktif** — robot menyiarkan WiFi `FIR-Robot` dan web server di `192.168.4.1`. Indikator kesiapan ini yang dipakai operator untuk tahu robot sudah hidup penuh.
+3. **Ukur** — ESP32-S3 membaca semua sensor secara berkala: suhu, turbidity, TDS, level air, dan hujan.
+4. **Nilai** — firmware menghitung WQI dari tiga parameter air, memeriksa setiap parameter terhadap ambang batasnya, dan menerapkan debounce 3× bacaan berturut-turut sebelum menyatakan ALERT (banner merah di dashboard + buzzer 3 bip).
+5. **Tampil** — dashboard web dan aplikasi Android menampilkan telemetri real-time: angka tiap sensor, label klasifikasi kekeruhan, nilai WQI, dan status ALERT.
+6. **Gerak** — operator mengemudikan robot dengan joystick virtual (2 motor DC, *differential thrust*) menuju titik ukur atau titik inspeksi berikutnya.
+7. **Foto & analisa** — di titik inspeksi, operator memicu kamera; foto dianalisa model Edge Impulse di dalam chip untuk skor kandidat korosi, lalu disimpan ke microSD.
+8. **Catat** — hasil ukur dan foto tercatat di microSD dan bisa ditinjau kembali lewat menu Riwayat Foto di dashboard, tanpa perlu mencabut kartu.
 
 ### Ambang Batas (sesuai firmware v7.10.2)
 
@@ -137,6 +186,7 @@ Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
 ```
 
 - **Satu modul menggantikan dua modul lama.** Modul **MH-CD42** (IC power-bank **IP5306**) mengambil alih tiga fungsi sekaligus: charger sel (s.d. 2,1 A, terminasi otomatis 4,20 V), proteksi sel (over-charge, over-discharge, over-current, hubung singkat), dan boost ke **5 V / 2,4 A** dengan ripple rendah (±50 mV). Modul lama TP4056 dan MT3608 tidak dipakai lagi.
+- **Kenapa diganti?** Pada arsitektur lama, tegangan memang terbaca 5,0 V di multimeter, tetapi rantai TP4056 + MT3608 tidak sanggup menyuplai **arus puncak** gabungan motor + lonjakan WiFi (±2 A di rel 5 V, setara ±3,2 A ditarik dari sel): tegangan rel runtuh sesaat (brownout), ESP reset, dan beban sensitif seperti kamera terganggu. MH-CD42 menyelesaikan ini di akarnya — satu modul yang memang dirancang untuk beban nyata power bank, dengan power-path sejati.
 - **Power-path management.** Berbeda dari TP4056 yang tidak bisa mengecas dengan benar saat ada beban terpasang, IP5306 dirancang untuk *charge-while-discharge* seperti power bank: USB cas boleh dicolok dan dicabut saat robot sedang beroperasi.
 - **Saklar 2 kaki duduk di sisi output 5 V modul** (bukan di sisi baterai), sehingga pengecasan tetap berjalan ketika saklar utama OFF — saklar memutus beban, bukan memutus charger dari sel.
 - **Rel 5 V dipecah dua cabang** sesudah saklar: cabang **logika** (ESP32-S3 + adaptor turbidity) dan cabang **motor** (DRV8833). Pemisahan ini mencegah hentakan arus dan noise motor merambat ke rel yang memberi makan ESP. Elco **470–1000 µF** menjaga cabang logika (sekaligus menjembatani jeda transisi singkat modul saat USB dicolok/dicabut), dan **1000 µF + 3× 100 µF paralel** menjaga VCC DRV8833.
@@ -157,7 +207,7 @@ Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
 | GPIO40 | DRV8833 IN3 (motor kanan) | Berbagi pin dengan SD_D0 |
 | GPIO41 | DRV8833 IN4 (motor kanan) | — |
 | GPIO42 | Sensor hujan LM393 — DO | Output digital komparator |
-| GPIO44 | Tap status cas (CHRG TP4056) | Indikator pengecasan |
+| GPIO44 | Tap status cas | Warisan modul lama (TP4056) — tidak digunakan pada arsitektur MH-CD42 |
 | GPIO45 | DRV8833 EEP (enable/sleep) | HIGH = driver aktif |
 
 ### Wiring per Komponen
@@ -225,6 +275,22 @@ Link di bawah adalah **contoh listing nyata** yang diverifikasi pada November 20
 - Halaman admin tersembunyi `/adminin` untuk override label klasifikasi turbidity (0 = otomatis, 1 = jernih, 2 = sedang, 3 = keruh; tersimpan persisten di LittleFS).
 - WiFi-only (tanpa Bluetooth) agar koneksi stabil dan konsumsi daya rendah.
 
+## Panduan Dashboard & Aplikasi
+
+Begitu HP menyambung ke hotspot `FIR-Robot` dan membuka `192.168.4.1` (atau aplikasi Android), yang tampil adalah dashboard kendali penuh robot:
+
+- **Indikator status koneksi** — selalu tampil di bagian atas: terhubung lewat WiFi atau tidak terhubung.
+- **Kartu telemetri sensor** — suhu air, TDS, level air, dan status hujan, diperbarui real-time.
+- **Kartu Kekeruhan** — nilai utamanya adalah **label klasifikasi** (jernih / sedang / keruh), bukan angka tegangan mentah, supaya langsung terbaca operator.
+- **Kartu WQI** — indeks 0–100 beserta labelnya (BAIK / SEDANG / BURUK).
+- **Banner ALERT** — muncul merah di dashboard disertai buzzer 3 bip di robot bila ada parameter berbahaya 3× berturut-turut.
+- **Joystick motor** — kendali dua motor: dorong untuk maju/mundur, geser untuk belok, putar di tempat dengan arah berlawanan.
+- **Tombol kamera & hasil foto** — mengambil foto inspeksi; hasil analisa menampilkan skor kandidat korosi (≥0,70 ditandai sebagai kandidat, tetap perlu verifikasi operator).
+- **Riwayat Foto** — meninjau foto-foto inspeksi yang tersimpan di microSD langsung dari dashboard.
+- **Halaman `/adminin`** — halaman admin tanpa tautan di dashboard (ketik alamatnya manual: `192.168.4.1/adminin`) untuk memaksa label klasifikasi turbidity: `0` = otomatis dari sensor, `1` = jernih, `2` = sedang, `3` = keruh. Pilihan tersimpan persisten di LittleFS; angka tegangan, WQI, dan log tetap dari sensor asli — yang diubah hanya label tampilannya.
+
+Aplikasi Android adalah pendamping dashboard yang sama: menyambung ke hotspot robot dan menampilkan kendali di atas — tidak butuh internet dan tidak ada akun.
+
 ## Struktur Repo
 
 ```
@@ -235,7 +301,7 @@ Floating-Inspector-Robot/
 │   └── lib/         # OneWire, DallasTemperature, model Edge Impulse
 ├── android-app/     # Source aplikasi Android pendamping (WiFi)
 ├── docs/            # PDF diagram wiring keseluruhan + per komponen
-├── logo.png         # Logo 3D FIR
+├── logo-3d.png      # Logo model 3D FIR (header README ini)
 ├── LICENSE          # MIT
 └── README.md
 ```
@@ -256,13 +322,66 @@ pio run -t upload    # flash ke board (saklar baterai OFF saat flash via USB)
 
 Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Aplikasi menyambung ke hotspot `FIR-Robot` dan membuka dashboard robot — tidak perlu internet.
 
-## Cara Pakai Singkat
+## Panduan Operasional Langkah demi Langkah
 
-1. Cas sel lewat port USB modul MH-CD42 sampai indikator penuh (4 LED). Boleh sambil robot menyala, tetapi untuk cas tercepat dan teraman biarkan saklar utama OFF.
-2. Nyalakan saklar — robot membuat hotspot **`FIR-Robot`**.
-3. Sambungkan HP ke hotspot itu, buka **`192.168.4.1`** atau aplikasi Android FIR.
-4. Uji motor **hanya dari daya baterai dengan saklar ON** (uji dari USB tidak sah — driver motor mengambil daya dari jalur baterai, bukan USB).
-5. Gerakkan robot ke titik ukur, biarkan probe terendam stabil, lalu baca WQI dan ambil foto inspeksi.
+### A. Persiapan & pengecasan
+1. Periksa sel 18650 terpasang benar di holder (kutub +/− sesuai tanda) dan microSD terpasang di slot board.
+2. Cas lewat port USB modul MH-CD42 sampai indikator penuh (4 LED). Boleh sambil robot menyala (power-path), tetapi untuk cas tercepat dan teraman biarkan saklar utama OFF.
+3. Periksa probe bersih dan tangkai probe terpasang kaku; probe yang longgar membuat bacaan meloncat.
+
+### B. Menyalakan & menyambung
+4. Nyalakan saklar utama — tunggu sampai hotspot **`FIR-Robot`** muncul di daftar WiFi HP (biasanya belasan detik).
+5. Sambungkan HP ke hotspot itu, lalu buka **`192.168.4.1`** di browser atau buka aplikasi Android FIR.
+6. Pastikan indikator status di atas dashboard menunjukkan terhubung dan kartu-kartu sensor mulai bergerak.
+
+### C. Uji gerak (wajib dari baterai)
+7. Angkat/pegang robot, gerakkan joystick perlahan: kedua baling-baling harus berputar. **Uji motor dari USB tidak sah** — driver motor mengambil daya dari jalur baterai lewat modul daya, bukan dari USB; dengan saklar OFF driver menerima 0 V dan motor pasti diam.
+8. Turunkan robot ke air, cek robot mengapung tegak dan probe terendam penuh.
+
+### D. Mengambil data & foto inspeksi
+9. Kemudikan robot ke titik ukur; diamkan beberapa saat sampai angka suhu/TDS/turbidity stabil, lalu baca **WQI** dan label kekeruhannya.
+10. Untuk inspeksi visual, dekatkan robot ke dinding dermaga/lambung kapal sampai zona garis air masuk bingkai kamera, lalu ambil foto. Skor kandidat korosi ≥0,70 berarti area itu ditandai sebagai **kandidat — verifikasi langsung oleh operator** sebelum disimpulkan apa pun.
+11. Tinjau hasil lewat menu **Riwayat Foto**; semua foto dan log tersimpan di microSD.
+
+### E. Selesai & perawatan
+12. Matikan saklar utama. Bilas probe dengan air bersih (kerak garam dan lumpur menempel mengubah bacaan turbidity/TDS), keringkan sebelum disimpan.
+13. Bila robot disimpan lama, cas sel sampai ±50–80% dan periksa berkala — jangan menyimpan sel dalam keadaan kosong penuh.
+
+## Pemecahan Masalah (Troubleshooting)
+
+| Gejala | Penyebab paling mungkin | Cara memastikan / mengatasi |
+|---|---|---|
+| Motor tidak bergerak saat uji colok USB | Uji tidak sah: driver motor berdaya dari jalur baterai, bukan USB | Uji ulang dari baterai dengan saklar ON sambil robot dipegang |
+| Hanya satu motor yang berputar | Tegangan EEP driver jatuh di tengah jalan (kabel EEP longgar/putus dalam) | Ukur tegangan di pin EEP driver saat motor diperintah jalan: harus ≥3,0 V; di bawah itu periksa kabel GPIO45 → EEP |
+| microSD tidak terbaca / dashboard lama muncul | Bus SD berbagi pin GPIO38/39/40 dengan driver motor; driver yang berdaya membebani bus | Lepas VCC DRV8833 saat perlu mengakses SD, atau tunggu siklus mount ulang firmware (dibatasi + cooldown 45 detik) |
+| Robot reset sendiri saat motor start / WiFi putus | Rel 5 V runtuh sesaat oleh hentakan arus motor | Pastikan elco cabang logika & motor terpasang; pada arsitektur lama (TP4056 + MT3608) ini adalah batas modulnya — arsitektur MH-CD42 adalah perbaikan permanennya |
+| Bacaan turbidity diam tidak berubah | Jalur analog adaptor tidak sampai ke GPIO1, atau probe kotor | Cek kabel pin A → divider → GPIO1; bersihkan jendela optik probe. **Jangan memutar trimpot 103** — itu hanya mengatur keluaran digital D yang tidak dipakai firmware |
+| Suhu terbaca 85 °C terus | Nilai bawaan DS18B20 saat DATA tidak terhubung dengan benar | Cek sambungan DATA (GPIO14) dan pull-up 4,7 kΩ ke 3V3; goyangkan kabel perlahan — bacaan harus tetap stabil |
+| Hotspot `FIR-Robot` tidak muncul | Robot belum selesai boot, atau SD bermasalah memperlambat start | Tunggu ±15 detik; firmware v7.10.2 membatasi percobaan mount SD agar AP tetap muncul |
+| Label kekeruhan ingin dipaksa tampil tertentu | Kebutuhan uji/demo tampilan | Buka `192.168.4.1/adminin`, set override 1/2/3, kembalikan ke 0 untuk otomatis |
+
+## FAQ
+
+**Apakah robot ini butuh internet?**
+Tidak. Robot membuat hotspot WiFi-nya sendiri dan dashboard dihosting langsung oleh ESP32-S3. Di tengah pelabuhan tanpa sinyal pun robot bekerja penuh.
+
+**Kenapa tidak memakai Bluetooth?**
+Sudah pernah dicoba pada versi awal dan dihapus total sejak firmware v7.1.0: WiFi saja terbukti lebih stabil untuk dashboard + kamera, dan lebih hemat daya. FIR adalah robot WiFi-only.
+
+**Apakah robot benar-benar mendeteksi karat?**
+Tidak — dan memang dirancang untuk tidak mengklaim itu. Robot menandai **kandidat area** berwarna coklat/oranye dengan skor analisa ≥0,70; kesimpulan akhir selalu hasil verifikasi operator yang melihat fotonya.
+
+**Berapa lama robot bisa beroperasi?**
+Tergantung pola pemakaian motor. Dengan sel 18650 ≥2000 mAh dan pemakaian ukur-diam yang dominan, robot dirancang untuk sesi pengukuran lapangan penuh; pemakaian motor terus-menerus adalah beban terberat dan paling cepat menguras sel.
+
+**Bisakah mengecas sambil robot bekerja?**
+Bisa. Modul MH-CD42 punya power-path sejati seperti power bank — USB cas boleh dicolok/dicabut kapan pun tanpa mengganggu operasi.
+
+**Kenapa angka kekeruhan ditampilkan sebagai label, bukan NTU?**
+Klasifikasi jernih/sedang/keruh di firmware bersifat relatif terhadap kalibrasi tegangan internal (jangkar CLEAR 0,42 V / DARK 0,85 V), bukan pembacaan NTU laboratorium — menampilkan label lebih jujur daripada angka satuan yang tidak terkalibrasi.
+
+**Bisakah rangkaian dayanya diberi baterai 3S 11,1 V?**
+Tidak, berbahaya. Seluruh rangkaian dirancang untuk 1 sel (1S) 3,7 V yang di-boost ke 5 V. Memberi 11,1 V akan merusak modul dan board.
 
 ## Keterbatasan yang Diketahui
 
@@ -270,6 +389,7 @@ Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Apli
 - Modul daya mematikan output 5 V secara otomatis bila arus beban di bawah ±45 mA selama 32 detik (fitur auto-off power bank); saat robot aktif hal ini tidak terjadi karena konsumsi ESP32-S3 selalu di atas ambang itu.
 - Klasifikasi turbidity bersifat relatif terhadap kalibrasi tegangan firmware (jangkar CLEAR 0,42 V / DARK 0,85 V), bukan pembacaan NTU laboratorium.
 - Skor korosi adalah **kandidat** untuk diverifikasi operator, bukan vonis kondisi material.
+- Inspeksi visual hanya menjangkau **zona garis air dan zona fotik** di dekat permukaan; biofouling jauh di bawah garis air berada di luar jangkauan robot terapung dan di luar klaim karya ini.
 
 ## Lisensi
 
