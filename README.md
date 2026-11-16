@@ -93,9 +93,9 @@ Ini titik awal konstruksi — bagian yang benar-benar masuk ke air:
 
 ### 3. Box Elektronik
 
-- **Box hasil cetak 3D (3D printed enclosure)** menampung: ESP32-S3 CAM, modul TP4056, modul MT3608, driver DRV8833, baterai LiPo 1S, buzzer, dan papan penggabung kabel.
+- **Box hasil cetak 3D (3D printed enclosure)** menampung: ESP32-S3 CAM, modul daya MH-CD42 (charger + proteksi + boost terintegrasi), driver DRV8833, sel 18650, buzzer, dan papan penggabung kabel.
 - Di dinding box terdapat **lubang lensa kamera** — lensa OV5640 mengintip keluar tepat menghadap zona garis air.
-- **Saklar 2 kaki** di sisi box memutus/menyambung daya dari TP4056 ke MT3608 (saklar utama robot).
+- **Saklar 2 kaki** di sisi box memutus/menyambung beban di sisi output 5 V modul daya (saklar utama robot — pengecasan tetap berjalan saat saklar OFF).
 - **Sensor hujan LM393** (pelat pendeteksi + modul komparator) dipasang di permukaan atas box, terbuka ke langit, untuk mendeteksi hujan saat robot bertugas.
 - Tidak ada rel/terminal pengumpul terpisah di dalam box: **semua kabel beban disolder gabung langsung di kaki pin ESP32-S3** (lihat bagian Wiring) — desain ini disengaja agar jumlah titik sambung minimum.
 
@@ -117,31 +117,31 @@ Ini titik awal konstruksi — bagian yang benar-benar masuk ke air:
 ### Arsitektur Daya
 
 ```
-LiPo 1S 3,7 V 500 mAh
+Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
         │  B+ / B−
-   ┌────▼─────┐        OUT+ ──► KAKI 1 saklar ──► KAKI 2 ──► MT3608 IN+
-   │  TP4056  │        OUT− ───────────────────────────────► MT3608 IN−
-   │ (charger │
-   │+proteksi)│
-   └──────────┘
-                    MT3608 (step-UP, disetel 5,0 V)
-                    OUT+ ──► pin 5V ESP32-S3      OUT− ──► pin GND ESP32-S3
-                                  │
-              ┌───────────────────┴───────────────────┐
-           Rel 5V                                Rel 3V3 (regulator internal ESP)
-     (menumpang kaki pin 5V ESP)           (menumpang kaki pin 3V3 ESP)
-     • DRV8833 VCC                         • DS18B20 VCC
-     • Adaptor turbidity pin V             • TDS +
-                                           • Sensor level air +
-                                           • Modul hujan LM393 VCC
-              └──────────── GND bersama (kaki pin GND ESP) ───────────┘
+   ┌────▼─────────────────────┐        USB = input cas 5 V
+   │  Modul MH-CD42 (IP5306)  │◄─────── boleh dicolok kapan pun, termasuk
+   │  charger + proteksi +    │         saat robot sedang jalan (power-path)
+   │  boost 5 V / 2,4 A       │
+   └────┬─────────────────────┘
+        │  OUT 5 V
+   Saklar 2 kaki (saklar utama — memutus BEBAN, bukan charger)
+        │
+   Titik cabang 5 V
+   ├─ Cabang LOGIKA ──► pin 5V ESP32-S3 ──► rel 3V3 (sensor kecil)
+   │     • elco 470–1000 µF di titik masuk cabang
+   │     • adaptor turbidity pin V ikut cabang ini
+   └─ Cabang MOTOR ──► DRV8833 VCC
+         • elco 1000 µF + 3× 100 µF paralel di VCC–GND DRV8833
+              └──────── GND bersama (kaki pin GND ESP) ────────┘
 ```
 
-- **TP4056** mengecas LiPo 1S lewat USB (cut-off 4,20 V) sekaligus memberi proteksi over-charge / over-discharge. Baterai tersambung ke pad **B+ / B−**; beban mengambil dari **OUT+ / OUT−**.
-- **Saklar 2 kaki** duduk di jalur OUT+ → IN+ MT3608 (kedua kaki setara, tidak ada polaritas).
-- **MT3608 adalah modul step-UP** (bukan step-down): menaikkan 3,7 V baterai menjadi **5,0 V**. Putar trimpotnya dan ukur dengan multimeter sampai OUT tepat 5,0 V **sebelum** disambung ke ESP.
-- **Elco 100 µF** dipasang di OUT MT3608 (peredam kedip tegangan), dan **3× 100 µF paralel** di VCC–GND DRV8833 (peredam hentakan arus motor).
-- ⚠️ **JANGAN PERNAH memakai baterai LiPo 3S (11,1 V) untuk robot ini.** Rangkaian dayanya dirancang untuk 1S.
+- **Satu modul menggantikan dua modul lama.** Modul **MH-CD42** (IC power-bank **IP5306**) mengambil alih tiga fungsi sekaligus: charger sel (s.d. 2,1 A, terminasi otomatis 4,20 V), proteksi sel (over-charge, over-discharge, over-current, hubung singkat), dan boost ke **5 V / 2,4 A** dengan ripple rendah (±50 mV). Modul lama TP4056 dan MT3608 tidak dipakai lagi.
+- **Power-path management.** Berbeda dari TP4056 yang tidak bisa mengecas dengan benar saat ada beban terpasang, IP5306 dirancang untuk *charge-while-discharge* seperti power bank: USB cas boleh dicolok dan dicabut saat robot sedang beroperasi.
+- **Saklar 2 kaki duduk di sisi output 5 V modul** (bukan di sisi baterai), sehingga pengecasan tetap berjalan ketika saklar utama OFF — saklar memutus beban, bukan memutus charger dari sel.
+- **Rel 5 V dipecah dua cabang** sesudah saklar: cabang **logika** (ESP32-S3 + adaptor turbidity) dan cabang **motor** (DRV8833). Pemisahan ini mencegah hentakan arus dan noise motor merambat ke rel yang memberi makan ESP. Elco **470–1000 µF** menjaga cabang logika (sekaligus menjembatani jeda transisi singkat modul saat USB dicolok/dicabut), dan **1000 µF + 3× 100 µF paralel** menjaga VCC DRV8833.
+- **Sel yang dipakai: 18650 high-drain ≥ 2000 mAh.** Arus cas modul (s.d. 2,1 A) dan puncak arus discharge robot (±3,2 A di sisi sel) sama-sama menuntut sel besar: pada 2000 mAh keduanya berada di kisaran ±1–1,6C yang sehat. **JANGAN mengecas sel kecil (mis. LiPo 500 mAh) dengan modul ini** — arus casnya bisa mencapai ±4C untuk sel sekecil itu.
+- ⚠️ **JANGAN PERNAH memakai baterai LiPo 3S (11,1 V) untuk robot ini.** Rangkaian dayanya dirancang untuk 1 sel (1S).
 
 ### Tabel Pin ESP32-S3
 
@@ -183,6 +183,8 @@ LiPo 1S 3,7 V 500 mAh
 **Catatan pin bersama:** GPIO38/39/40 dipakai bergantian oleh driver motor dan bus microSD (SD_CMD/SD_CLK/SD_D0). Firmware v7.10.2 menangani ini dengan membatasi percobaan mount SD dan memberi cooldown, tetapi konsekuensinya akses SD paling andal saat driver motor tidak berdaya.
 
 > Diagram visual lengkap tersedia di folder [`docs/`](docs/): **Wiring_FIR_Terkini_10Nov2026.pdf** (diagram wiring keseluruhan) dan **Diagram_Wiring_Per_Komponen_FIR_Terkini.pdf** (satu diagram per komponen).
+>
+> Catatan: kedua PDF tersebut masih menggambarkan arsitektur daya lama (TP4056 + MT3608). Untuk rangkaian daya, ikuti sub-bab **Arsitektur Daya** di atas.
 
 ---
 
@@ -197,16 +199,15 @@ Link di bawah adalah **contoh listing nyata** yang diverifikasi pada November 20
 | 3 | **Turbidity SEN-0175** (probe + adaptor G A D V) | Sensor kekeruhan air | [Beli (modul keluarga sama, Rajacell)](https://www.tokopedia.com/rajacell/turbidity-sensor-module-deteksi-kualitas-kejernihan-air-for-arduinoo-ab147) · unit asli dibeli di [CNC Store Bandung (Shopee)](https://shopee.co.id/Turbidity-Sensor-Module-–-Sensor-Kekeruhan-Air-Kejernihan-Air-untuk-Arduino-Mikrokontroler-i.62956347.20284260245) | [Beli (padanan: DFRobot Gravity SEN0189)](https://www.amazon.com/dp/B075T3CVH6) |
 | 4 | **Sensor TDS analog** (kompatibel Gravity) | Sensor zat terlarut | [Beli](https://www.tokopedia.com/digiware/tds-sensor-meter-water-quality-total-dissolved-solids-grove) | [Beli (CQRobot)](https://www.amazon.com/dp/B08KXRHK7H) |
 | 5 | **DRV8833** dual H-bridge | Driver 2 motor DC (3–10 V, 1,5 A/kanal) | [Beli](https://www.tokopedia.com/rajacell/drv8833-2-channel-dc-motor-driver-module-board-15a-3v-10v-for-arduino) | [Beli](https://www.amazon.com/dp/B0C6WRFJWM) |
-| 6 | **MT3608** step-up DC-DC | Menaikkan 3,7 V → 5,0 V | [Beli](https://www.tokopedia.com/eltech-online/mt3608-2-24v-step-up-to-5-28v-2a-dc-dc-converter-power-modul) | [Beli](https://www.amazon.com/dp/B0FSX55BGL) |
-| 7 | **TP4056 versi proteksi** (DW01) | Charger + proteksi LiPo 1S | [Beli](https://www.tokopedia.com/emarket-id/lithium-battery-charging-tp4056-5v-1a-micro-usb-modul) | [Beli](https://www.amazon.com/dp/B08F7QSLN7) |
-| 8 | **LiPo 1S 3,7 V 500 mAh** | Baterai utama | [Cari](https://www.tokopedia.com/find/lipo-500mah) | [Beli (EEMB LP403048)](https://www.amazon.com/dp/B095W6742D) |
-| 9 | **Sensor hujan LM393** (raindrops module) | Deteksi hujan di atas box | [Beli](https://www.tokopedia.com/digpart/raindrops-detection-sensor-module-rain-weather-detektor-air-hujan) | [Beli (HiLetgo)](https://www.amazon.com/HiLetgo-Moisture-Humidity-Sensitivity-Nickeled/dp/B01DK29K28) |
-| 10 | **Sensor level air** (water level sensor) | Ketinggian permukaan air di lambung | [Beli](https://www.tokopedia.com/rajacell/new-water-level-sensor-gold-coating-for-arduino-sensor-ketinggian-air) | [Beli (Songhe)](https://www.amazon.com/dp/B07THDH7Y4) |
+| 6 | **Modul MH-CD42 (IP5306)** | Charger + proteksi + boost 5 V/2,4 A terintegrasi, power-path (menggantikan TP4056 + MT3608 sekaligus) | [Beli](https://www.tokopedia.com/bmastr/modul-mh-cd42-battery-li-ion-3-6v-charge-discharge-protect-5v-2a-out-lite-mh-cd42-5v?extParam=ivf%3Dfalse&src=topads) | [Beli (modul kelas sama, AEDIKO)](https://www.amazon.com/dp/B09JZFXD1X) |
+| 7 | **Sel Li-ion 18650 high-drain ≥ 2000 mAh** | Baterai utama (menggantikan LiPo 500 mAh) | — | — |
+| 8 | **Sensor hujan LM393** (raindrops module) | Deteksi hujan di atas box | [Beli](https://www.tokopedia.com/digpart/raindrops-detection-sensor-module-rain-weather-detektor-air-hujan) | [Beli (HiLetgo)](https://www.amazon.com/HiLetgo-Moisture-Humidity-Sensitivity-Nickeled/dp/B01DK29K28) |
+| 9 | **Sensor level air** (water level sensor) | Ketinggian permukaan air di lambung | [Beli](https://www.tokopedia.com/rajacell/new-water-level-sensor-gold-coating-for-arduino-sensor-ketinggian-air) | [Beli (Songhe)](https://www.amazon.com/dp/B07THDH7Y4) |
 
 **Komponen pendukung** (generik, tersedia di hampir semua toko elektronik):
 - 2× motor DC kecil + baling-baling (propeller) kiri/kanan
 - Buzzer aktif 3,3–5 V
-- Kapasitor elektrolit 100 µF (4 buah: 1 di OUT MT3608, 3 paralel di DRV8833)
+- Kapasitor elektrolit 100 µF (3 buah, paralel di DRV8833) + 1000 µF (2 buah: cabang logika & cabang motor)
 - Resistor 4,7 kΩ (pull-up DS18B20) dan 20 kΩ ×2 (divider turbidity)
 - Saklar geser/toggle 2 kaki
 - microSD card (untuk foto + log)
@@ -257,7 +258,7 @@ Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Apli
 
 ## Cara Pakai Singkat
 
-1. Cas baterai lewat port USB TP4056 sampai penuh (4,20 V).
+1. Cas sel lewat port USB modul MH-CD42 sampai indikator penuh (4 LED). Boleh sambil robot menyala, tetapi untuk cas tercepat dan teraman biarkan saklar utama OFF.
 2. Nyalakan saklar — robot membuat hotspot **`FIR-Robot`**.
 3. Sambungkan HP ke hotspot itu, buka **`192.168.4.1`** atau aplikasi Android FIR.
 4. Uji motor **hanya dari daya baterai dengan saklar ON** (uji dari USB tidak sah — driver motor mengambil daya dari jalur baterai, bukan USB).
@@ -266,6 +267,7 @@ Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Apli
 ## Keterbatasan yang Diketahui
 
 - GPIO38/39/40 dipakai bersama oleh driver motor dan bus microSD — akses SD paling andal saat motor tidak berdaya (dijelaskan di bagian Wiring).
+- Modul daya mematikan output 5 V secara otomatis bila arus beban di bawah ±45 mA selama 32 detik (fitur auto-off power bank); saat robot aktif hal ini tidak terjadi karena konsumsi ESP32-S3 selalu di atas ambang itu.
 - Klasifikasi turbidity bersifat relatif terhadap kalibrasi tegangan firmware (jangkar CLEAR 0,42 V / DARK 0,85 V), bukan pembacaan NTU laboratorium.
 - Skor korosi adalah **kandidat** untuk diverifikasi operator, bukan vonis kondisi material.
 
