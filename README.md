@@ -1,6 +1,7 @@
 <div align="center">
 
-<img src="logo.png" alt="Logo FIR — Floating Inspector Robot" width="420">
+<img src="logo.png" alt="Logo FIR — Floating Inspector Robot" width="260">
+<img src="logo-3d.png" alt="Model 3D FIR — Floating Inspector Robot" width="400">
 
 # FIR — Floating Inspector Robot
 
