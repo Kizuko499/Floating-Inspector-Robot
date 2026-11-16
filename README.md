@@ -107,6 +107,12 @@ Satu siklus kerja robot, dari menyala sampai data terbaca operator:
 7. **Foto & analisa** — di titik inspeksi, operator memicu kamera; foto dianalisa model Edge Impulse di dalam chip untuk skor kandidat korosi, lalu disimpan ke microSD.
 8. **Catat** — hasil ukur dan foto tercatat di microSD dan bisa ditinjau kembali lewat menu Riwayat Foto di dashboard, tanpa perlu mencabut kartu.
 
+```mermaid
+flowchart LR
+    A["Nyalakan"] --> B["Hotspot<br/>FIR-Robot aktif"] --> C["Ukur<br/>semua sensor"] --> D["Nilai<br/>WQI + ambang batas"] --> E["Tampil<br/>dashboard & aplikasi"] --> F["Gerak<br/>ke titik berikut"] --> G["Foto + analisa<br/>kandidat korosi"] --> H["Catat<br/>microSD"]
+    D -.->|"3× bacaan bahaya berturut-turut"| X["ALERT<br/>banner merah + buzzer 3 bip"]
+```
+
 ### Ambang Batas (sesuai firmware v7.10.2)
 
 | Parameter | Aman | Waspada / Bahaya |
@@ -165,24 +171,30 @@ Ini titik awal konstruksi — bagian yang benar-benar masuk ke air:
 
 ### Arsitektur Daya
 
-```
-Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
-        │  B+ / B−
-   ┌────▼─────────────────────┐        USB = input cas 5 V
-   │  Modul MH-CD42 (IP5306)  │◄─────── boleh dicolok kapan pun, termasuk
-   │  charger + proteksi +    │         saat robot sedang jalan (power-path)
-   │  boost 5 V / 2,4 A       │
-   └────┬─────────────────────┘
-        │  OUT 5 V
-   Saklar 2 kaki (saklar utama — memutus BEBAN, bukan charger)
-        │
-   Titik cabang 5 V
-   ├─ Cabang LOGIKA ──► pin 5V ESP32-S3 ──► rel 3V3 (sensor kecil)
-   │     • elco 470–1000 µF di titik masuk cabang
-   │     • adaptor turbidity pin V ikut cabang ini
-   └─ Cabang MOTOR ──► DRV8833 VCC
-         • elco 1000 µF + 3× 100 µF paralel di VCC–GND DRV8833
-              └──────── GND bersama (kaki pin GND ESP) ────────┘
+```mermaid
+flowchart TD
+    BAT["Sel Li-ion 18650<br/>3,7 V · ≥2000 mAh · high-drain"]
+    USB["USB 5 V — input cas<br/>boleh dicolok kapan pun (power-path)"]
+    MOD["<b>Modul MH-CD42 (IP5306)</b><br/>charger + proteksi + boost 5 V / 2,4 A"]
+    SW["Saklar 2 kaki<br/>saklar utama — memutus BEBAN, bukan charger"]
+    SPLIT{"Titik cabang 5 V"}
+    LOGIC["Cabang LOGIKA<br/>elco 470–1000 µF di titik masuk"]
+    MOTOR["Cabang MOTOR<br/>elco 1000 µF + 3× 100 µF paralel"]
+    ESP["ESP32-S3 — pin 5V<br/>rel 3V3 untuk sensor kecil"]
+    TURB["Adaptor turbidity — pin V"]
+    DRV["DRV8833 — VCC<br/>driver 2 motor DC"]
+    GND["GND bersama<br/>kaki pin GND ESP"]
+    BAT -->|"B+ / B−"| MOD
+    USB --> MOD
+    MOD -->|"OUT 5 V"| SW
+    SW --> SPLIT
+    SPLIT --> LOGIC
+    SPLIT --> MOTOR
+    LOGIC --> ESP
+    LOGIC --> TURB
+    MOTOR --> DRV
+    ESP -.-> GND
+    DRV -.-> GND
 ```
 
 - **Satu modul menggantikan dua modul lama.** Modul **MH-CD42** (IC power-bank **IP5306**) mengambil alih tiga fungsi sekaligus: charger sel (s.d. 2,1 A, terminasi otomatis 4,20 V), proteksi sel (over-charge, over-discharge, over-current, hubung singkat), dan boost ke **5 V / 2,4 A** dengan ripple rendah (±50 mV). Modul lama TP4056 dan MT3608 tidak dipakai lagi.
@@ -191,7 +203,8 @@ Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
 - **Saklar 2 kaki duduk di sisi output 5 V modul** (bukan di sisi baterai), sehingga pengecasan tetap berjalan ketika saklar utama OFF — saklar memutus beban, bukan memutus charger dari sel.
 - **Rel 5 V dipecah dua cabang** sesudah saklar: cabang **logika** (ESP32-S3 + adaptor turbidity) dan cabang **motor** (DRV8833). Pemisahan ini mencegah hentakan arus dan noise motor merambat ke rel yang memberi makan ESP. Elco **470–1000 µF** menjaga cabang logika (sekaligus menjembatani jeda transisi singkat modul saat USB dicolok/dicabut), dan **1000 µF + 3× 100 µF paralel** menjaga VCC DRV8833.
 - **Sel yang dipakai: 18650 high-drain ≥ 2000 mAh.** Arus cas modul (s.d. 2,1 A) dan puncak arus discharge robot (±3,2 A di sisi sel) sama-sama menuntut sel besar: pada 2000 mAh keduanya berada di kisaran ±1–1,6C yang sehat. **JANGAN mengecas sel kecil (mis. LiPo 500 mAh) dengan modul ini** — arus casnya bisa mencapai ±4C untuk sel sekecil itu.
-- ⚠️ **JANGAN PERNAH memakai baterai LiPo 3S (11,1 V) untuk robot ini.** Rangkaian dayanya dirancang untuk 1 sel (1S).
+> [!WARNING]
+> **JANGAN PERNAH memakai baterai LiPo 3S (11,1 V) untuk robot ini.** Rangkaian dayanya dirancang untuk 1 sel (1S).
 
 ### Tabel Pin ESP32-S3
 
@@ -218,7 +231,8 @@ Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
 - **V** → rel 5V · **G** → GND
 - **A** (analog out) → **simpul divider** → GPIO1
 - **D** (digital out) → tidak dipakai; ambangnya diatur trimpot biru **103** di adaptor — **jangan diputar**, firmware membaca jalur analog.
-- ⚠️ **Peringatan keras:** pin A bisa mengeluarkan sampai **4,5 V**, sedangkan GPIO ESP32-S3 maksimum 3,3 V. Karena itu output A **wajib** melewati jaringan resistor **20 kΩ ke 3V3 + 20 kΩ ke GND** dengan simpul tengahnya masuk GPIO1. Menyambung A langsung ke GPIO akan merusak pin.
+> [!CAUTION]
+> **Peringatan keras:** pin A bisa mengeluarkan sampai **4,5 V**, sedangkan GPIO ESP32-S3 maksimum 3,3 V. Karena itu output A **wajib** melewati jaringan resistor **20 kΩ ke 3V3 + 20 kΩ ke GND** dengan simpul tengahnya masuk GPIO1. Menyambung A langsung ke GPIO akan merusak pin.
 
 **TDS (kompatibel Gravity)** — pin **+** → rel 3V3 · **−** → GND · **A** (analog out) → GPIO2.
 
@@ -232,9 +246,8 @@ Sel Li-ion 18650 3,7 V ≥2000 mAh (high-drain)
 
 **Catatan pin bersama:** GPIO38/39/40 dipakai bergantian oleh driver motor dan bus microSD (SD_CMD/SD_CLK/SD_D0). Firmware v7.10.2 menangani ini dengan membatasi percobaan mount SD dan memberi cooldown, tetapi konsekuensinya akses SD paling andal saat driver motor tidak berdaya.
 
-> Diagram visual lengkap tersedia di folder [`docs/`](docs/): **Wiring_FIR_Terkini_10Nov2026.pdf** (diagram wiring keseluruhan) dan **Diagram_Wiring_Per_Komponen_FIR_Terkini.pdf** (satu diagram per komponen).
->
-> Catatan: kedua PDF tersebut masih menggambarkan arsitektur daya lama (TP4056 + MT3608). Untuk rangkaian daya, ikuti sub-bab **Arsitektur Daya** di atas.
+> [!NOTE]
+> Diagram visual lengkap tersedia di folder [`docs/`](docs/): **Wiring_FIR_Terkini_10Nov2026.pdf** (diagram wiring keseluruhan) dan **Diagram_Wiring_Per_Komponen_FIR_Terkini.pdf** (satu diagram per komponen). Kedua PDF tersebut masih menggambarkan arsitektur daya lama (TP4056 + MT3608) — untuk rangkaian daya, ikuti sub-bab **Arsitektur Daya** di atas.
 
 ---
 
@@ -316,7 +329,8 @@ pio run              # build
 pio run -t upload    # flash ke board (saklar baterai OFF saat flash via USB)
 ```
 
-> ⚠️ **Kredensial WiFi:** di `firmware/src/main.cpp` sekitar baris 1372–1379 terdapat konstanta `WIFI_SSID`, `WIFI_PASS`, dan `AP_PASS` yang di repo ini sudah diganti **placeholder** (`NAMA_WIFI_ANDA`, `PASSWORD_WIFI_ANDA`, `PASSWORD_AP_ANDA`). Isi dengan kredensialmu sendiri sebelum build. Jangan pernah commit password asli.
+> [!IMPORTANT]
+> **Kredensial WiFi:** di `firmware/src/main.cpp` sekitar baris 1372–1379 terdapat konstanta `WIFI_SSID`, `WIFI_PASS`, dan `AP_PASS` yang di repo ini sudah diganti **placeholder** (`NAMA_WIFI_ANDA`, `PASSWORD_WIFI_ANDA`, `PASSWORD_AP_ANDA`). Isi dengan kredensialmu sendiri sebelum build. Jangan pernah commit password asli.
 
 ## 📱 Build Aplikasi Android
 
@@ -324,10 +338,12 @@ Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Apli
 
 ## Panduan Operasional Langkah demi Langkah
 
-### A. Persiapan & pengecasan
-1. Periksa sel 18650 terpasang benar di holder (kutub +/− sesuai tanda) dan microSD terpasang di slot board.
-2. Cas lewat port USB modul MH-CD42 sampai indikator penuh (4 LED). Boleh sambil robot menyala (power-path), tetapi untuk cas tercepat dan teraman biarkan saklar utama OFF.
-3. Periksa probe bersih dan tangkai probe terpasang kaku; probe yang longgar membuat bacaan meloncat.
+### A. Persiapan & pengecasan — daftar periksa
+
+- [ ] Sel 18650 terpasang benar di holder (kutub +/− sesuai tanda)
+- [ ] microSD terpasang di slot board
+- [ ] Sel dicas lewat port USB modul MH-CD42 sampai indikator penuh (4 LED) — boleh sambil robot menyala (power-path), tetapi untuk cas tercepat dan teraman biarkan saklar utama OFF
+- [ ] Probe bersih dan tangkai probe terpasang kaku — probe yang longgar membuat bacaan meloncat
 
 ### B. Menyalakan & menyambung
 4. Nyalakan saklar utama — tunggu sampai hotspot **`FIR-Robot`** muncul di daftar WiFi HP (biasanya belasan detik).
@@ -335,7 +351,10 @@ Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Apli
 6. Pastikan indikator status di atas dashboard menunjukkan terhubung dan kartu-kartu sensor mulai bergerak.
 
 ### C. Uji gerak (wajib dari baterai)
-7. Angkat/pegang robot, gerakkan joystick perlahan: kedua baling-baling harus berputar. **Uji motor dari USB tidak sah** — driver motor mengambil daya dari jalur baterai lewat modul daya, bukan dari USB; dengan saklar OFF driver menerima 0 V dan motor pasti diam.
+7. Angkat/pegang robot, gerakkan joystick perlahan: kedua baling-baling harus berputar.
+
+> [!WARNING]
+> **Uji motor dari USB tidak sah** — driver motor mengambil daya dari jalur baterai lewat modul daya, bukan dari USB; dengan saklar OFF driver menerima 0 V dan motor pasti diam. Uji yang sah hanya dari baterai dengan saklar ON.
 8. Turunkan robot ke air, cek robot mengapung tegak dan probe terendam penuh.
 
 ### D. Mengambil data & foto inspeksi
