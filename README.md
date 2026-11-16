@@ -1,6 +1,5 @@
 <div align="center">
 
-<img src="logo.png" alt="Logo FIR — Floating Inspector Robot" width="260">
 <img src="logo-3d.png" alt="Model 3D FIR — Floating Inspector Robot" width="400">
 
 # FIR — Floating Inspector Robot
@@ -277,7 +276,6 @@ Buka folder `android-app/` di Android Studio, lalu **Build → Build APK**. Apli
 Dirilis di bawah [Lisensi MIT](LICENSE) — © Kizuko499.
 
 <div align="center">
-<img src="logo.png" alt="FIR" width="120">
 
 **FIR — Floating Inspector Robot** · Karya pribadi · Dibangun dari nol dengan ESP32-S3
 </div>
